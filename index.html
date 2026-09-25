@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Mi Plata</title>
+  <meta name="description" content="Registra tus gastos e ingresos con la voz y mira tu balance del mes.">
+  <meta name="theme-color" content="#0f766e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Mi Plata">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="brand">Mi Plata</h1>
+    <div class="month-picker" role="group" aria-label="Mes">
+      <button type="button" class="icon-btn" id="prev-month" aria-label="Mes anterior">‹</button>
+      <span id="month-label" aria-live="polite"></span>
+      <button type="button" class="icon-btn" id="next-month" aria-label="Mes siguiente">›</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- INICIO -->
+    <section id="view-home" class="view" data-view="home">
+      <div class="card balance">
+        <p class="label">Balance del mes</p>
+        <p class="hero" id="balance-total">$0</p>
+        <div class="tiles">
+          <div class="tile">
+            <span class="label">Ingresos</span>
+            <strong id="income-total" class="income">$0</strong>
+          </div>
+          <div class="tile">
+            <span class="label">Gastos</span>
+            <strong id="expense-total" class="expense">$0</strong>
+          </div>
+        </div>
+        <p class="hint" id="balance-hint"></p>
+      </div>
+
+      <div class="card capture">
+        <button type="button" class="mic" id="mic-btn" aria-label="Dictar un movimiento">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+        </button>
+        <p class="transcript" id="transcript" aria-live="polite">Toca el micrófono y di, por ejemplo: <em>«gasté 25 mil en almuerzo»</em></p>
+        <form id="quick-form" class="quick-form" autocomplete="off">
+          <input id="quick-input" type="text" enterkeyhint="send"
+                 placeholder="O escribe: taxi 12 mil" aria-label="Describe el movimiento">
+          <button type="submit" class="btn primary">Agregar</button>
+        </form>
+        <div class="chips" id="examples">
+          <button type="button" class="chip">almuerzo 18 mil</button>
+          <button type="button" class="chip">me pagaron la quincena 1.800.000</button>
+          <button type="button" class="chip">mercado 230 mil con tarjeta</button>
+        </div>
+      </div>
+
+      <div class="section-head">
+        <h2>Últimos movimientos</h2>
+        <button type="button" class="link" data-goto="list">Ver todos</button>
+      </div>
+      <ul class="tx-list" id="recent-list"></ul>
+    </section>
+
+    <!-- MOVIMIENTOS -->
+    <section id="view-list" class="view" data-view="list" hidden>
+      <div class="filters">
+        <div class="segmented" role="radiogroup" aria-label="Tipo">
+          <button type="button" role="radio" aria-checked="true" data-filter="all">Todos</button>
+          <button type="button" role="radio" aria-checked="false" data-filter="expense">Gastos</button>
+          <button type="button" role="radio" aria-checked="false" data-filter="income">Ingresos</button>
+        </div>
+        <input type="search" id="search" placeholder="Buscar…" aria-label="Buscar movimientos">
+      </div>
+      <div id="full-list"></div>
+    </section>
+
+    <!-- RESUMEN -->
+    <section id="view-summary" class="view" data-view="summary" hidden>
+      <div class="card">
+        <div class="tiles three">
+          <div class="tile"><span class="label">Ahorro</span><strong id="savings-rate">–</strong></div>
+          <div class="tile"><span class="label">Gasto diario</span><strong id="daily-avg">–</strong></div>
+          <div class="tile"><span class="label">vs. mes anterior</span><strong id="vs-prev">–</strong></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Gastos por categoría</h2>
+        <div class="bars" id="expense-bars"></div>
+      </div>
+      <div class="card">
+        <h2>Ingresos por categoría</h2>
+        <div class="bars" id="income-bars"></div>
+      </div>
+      <div class="card">
+        <h2>Por medio de pago</h2>
+        <div class="bars" id="payment-bars"></div>
+      </div>
+    </section>
+
+    <!-- AJUSTES -->
+    <section id="view-settings" class="view" data-view="settings" hidden>
+      <div class="card">
+        <h2>Moneda</h2>
+        <select id="currency" aria-label="Moneda">
+          <option value="COP">Peso colombiano (COP)</option>
+          <option value="MXN">Peso mexicano (MXN)</option>
+          <option value="USD">Dólar (USD)</option>
+          <option value="EUR">Euro (EUR)</option>
+          <option value="ARS">Peso argentino (ARS)</option>
+          <option value="CLP">Peso chileno (CLP)</option>
+          <option value="PEN">Sol peruano (PEN)</option>
+        </select>
+      </div>
+      <div class="card">
+        <h2>Tus datos</h2>
+        <p class="muted">Todo se guarda solo en este dispositivo. Haz un respaldo de vez en cuando.</p>
+        <div class="stack">
+          <button type="button" class="btn" id="export-csv">Descargar Excel (CSV)</button>
+          <button type="button" class="btn" id="export-json">Descargar respaldo</button>
+          <label class="btn">Restaurar respaldo<input type="file" id="import-json" accept="application/json,.json" hidden></label>
+          <button type="button" class="btn danger" id="clear-all">Borrar todos los movimientos</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Registrar sin abrir la app</h2>
+        <p class="muted">Puedes abrir la app con el texto ya escrito usando este enlace (sirve para Atajos de iPhone o Google Assistant):</p>
+        <code class="url" id="shortcut-url"></code>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar" aria-label="Secciones">
+    <button type="button" data-tab="home" aria-current="page"><span aria-hidden="true">🏠</span>Inicio</button>
+    <button type="button" data-tab="list"><span aria-hidden="true">📋</span>Movimientos</button>
+    <button type="button" data-tab="summary"><span aria-hidden="true">📊</span>Resumen</button>
+    <button type="button" data-tab="settings"><span aria-hidden="true">⚙️</span>Ajustes</button>
+  </nav>
+
+  <button type="button" class="fab" id="add-manual" aria-label="Agregar manualmente">+</button>
+
+  <dialog id="tx-dialog" aria-labelledby="tx-title">
+    <form method="dialog" id="tx-form">
+      <h2 id="tx-title">Confirmar movimiento</h2>
+      <p class="raw" id="tx-raw"></p>
+      <div class="segmented" role="radiogroup" aria-label="Tipo de movimiento">
+        <button type="button" role="radio" data-type="expense" aria-checked="true">Gasto</button>
+        <button type="button" role="radio" data-type="income" aria-checked="false">Ingreso</button>
+      </div>
+      <label>Monto
+        <input id="tx-amount" type="text" inputmode="decimal" required placeholder="0">
+      </label>
+      <label>Descripción
+        <input id="tx-description" type="text" maxlength="120">
+      </label>
+      <label>Categoría
+        <select id="tx-category"></select>
+      </label>
+      <div class="row">
+        <label>Fecha
+          <input id="tx-date" type="date" required>
+        </label>
+        <label>Medio de pago
+          <select id="tx-payment"></select>
+        </label>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn danger ghost" id="tx-delete" hidden>Eliminar</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="tx-cancel">Cancelar</button>
+        <button type="submit" class="btn primary" id="tx-save">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" hidden>
+    <span id="toast-text"></span>
+    <button type="button" class="link" id="toast-action" hidden>Deshacer</button>
+  </div>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "personal-money",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Registro de gastos e ingresos por voz, como app web instalable (PWA).",
+  "type": "module",
+  "scripts": {
+    "start": "npx --yes serve -l 8080 .",
+    "test": "node --test"
+  }
+}
