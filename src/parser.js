@@ -104,7 +104,7 @@ function findNumberPhrases(words) {
 
     const value = total + current;
     const onlyArticle = i - start === 1 && ARTICLES.has(words[start]);
-    if (value > 0 && !onlyArticle) phrases.push({ start, end: i, value, strong });
+    if (value > 0 && !onlyArticle) phrases.push({ start, end: i, value, strong, multiplier: lastMultiplier });
     if (i === start) i += 1;
   }
   return phrases;
@@ -140,12 +140,17 @@ function firstIndexOf(text, phrases) {
   return best;
 }
 
-export function detectType(normalizedText) {
+// Devuelve el tipo si la frase lo dice (verbo o palabra clave), o null si no hay pistas.
+function typeSignal(normalizedText) {
   const income = firstIndexOf(normalizedText, INCOME_VERBS);
   const expense = firstIndexOf(normalizedText, EXPENSE_VERBS);
   if (income !== expense) return income < expense ? 'income' : 'expense';
   if (firstIndexOf(normalizedText, INCOME_NOUNS) !== Infinity) return 'income';
-  return 'expense';
+  return null;
+}
+
+export function detectType(normalizedText) {
+  return typeSignal(normalizedText) ?? 'expense';
 }
 
 // ---------------------------------------------------------------------------
@@ -231,10 +236,10 @@ function detectDate(words, used, now) {
     if (offset !== null) {
       used.add(i);
       d.setDate(d.getDate() + offset);
-      return isoDate(d);
+      return { date: isoDate(d), explicit: true };
     }
   }
-  return isoDate(d);
+  return { date: isoDate(d), explicit: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -289,18 +294,14 @@ function tokenize(text) {
     .filter(Boolean);
 }
 
-/**
- * Convierte una frase libre en un movimiento.
- * @returns {{type:'income'|'expense', amount:number|null, category:string,
- *   description:string, date:string, paymentMethod:string|null, raw:string}}
- */
-export function parseTransaction(text, now = new Date()) {
+function analyze(text, now) {
   const raw = text.trim();
   const originalWords = tokenize(raw);
   const words = originalWords.map(normalize);
   const used = new Set();
 
-  const type = detectType(words.join(' '));
+  const signal = typeSignal(words.join(' '));
+  const type = signal ?? 'expense';
 
   const phrase = pickAmount(findNumberPhrases(words), words);
   let amount = null;
@@ -310,10 +311,93 @@ export function parseTransaction(text, now = new Date()) {
   }
 
   const paymentMethod = detectPayment(words, used);
-  const date = detectDate(words, used, now);
+  const { date, explicit: dateExplicit } = detectDate(words, used, now);
 
   const description = buildDescription(originalWords, words, used);
-  const category = detectCategory(words.filter((_, i) => !used.has(i)), type);
+  const categoryWords = words.filter((_, i) => !used.has(i));
+  const category = detectCategory(categoryWords, type);
 
-  return { type, amount, category, description, date, paymentMethod, raw };
+  return {
+    tx: { type, amount, category, description, date, paymentMethod, raw },
+    meta: {
+      typeExplicit: signal !== null,
+      dateExplicit,
+      multiplier: phrase?.multiplier ?? 0,
+      // Cifra que claramente es dinero: grande, con "mil"/"millones" o con "$".
+      clearAmount: Boolean(phrase && (phrase.value >= 1000 || phrase.multiplier || words[phrase.start - 1] === '$')),
+      nextWord: phrase ? words[phrase.end] ?? null : null,
+      categoryWords,
+    },
+  };
+}
+
+/**
+ * Convierte una frase libre en un movimiento.
+ * @returns {{type:'income'|'expense', amount:number|null, category:string,
+ *   description:string, date:string, paymentMethod:string|null, raw:string}}
+ */
+export function parseTransaction(text, now = new Date()) {
+  return analyze(text, now).tx;
+}
+
+const TENS = '(treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)';
+const UNITS_RE = '(un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)';
+
+// Parte "80 mil de luz y 60 de internet" en frases sueltas, sin romper
+// números como "treinta y cinco" o "un millón y medio".
+function splitSegments(text) {
+  const protectedText = text
+    .replace(new RegExp(`\\b${TENS}\\s+y\\s+(?=${UNITS_RE}\\b)`, 'gi'), '$1 Y§ ')
+    .replace(/\s+y\s+(?=medi[oa]\b)/gi, ' Y§ ');
+  return protectedText
+    .split(/[;\n]+|,(?!\d)|\s+(?:y|e|además|ademas|también|tambien|aparte)\s+/i)
+    .map((part) => part.replace(/Y§/g, 'y').trim())
+    .filter(Boolean);
+}
+
+/**
+ * Como parseTransaction, pero reconoce varios movimientos en una frase:
+ * "pagué 80 mil de luz y 60 de internet" → dos gastos.
+ * Siempre devuelve al menos un elemento.
+ */
+export function parseMany(text, now = new Date()) {
+  const segments = splitSegments(text);
+  const groups = [];
+  let prefix = '';
+  let lastMultiplier = 0;
+  for (const seg of segments) {
+    const { tx, meta } = analyze(seg, now);
+    // "60 de internet" después de "80 mil de luz" cuenta como otro monto;
+    // "3 pantalones" no (es una cantidad de cosas).
+    const inheritsThousands = tx.amount !== null && lastMultiplier === 1000
+      && [null, 'de', 'del', 'en', 'por', 'para', 'pa'].includes(meta.nextWord);
+    if (meta.clearAmount || inheritsThousands) {
+      groups.push(prefix ? `${prefix} ${seg}` : seg);
+      prefix = '';
+      lastMultiplier = meta.multiplier || lastMultiplier;
+    } else if (groups.length) {
+      groups[groups.length - 1] += ` y ${seg}`;
+    } else {
+      prefix = prefix ? `${prefix} y ${seg}` : seg;
+    }
+  }
+  if (groups.length <= 1) return [parseTransaction(text, now)];
+
+  const results = [];
+  let prev = null;
+  for (const group of groups) {
+    const { tx, meta } = analyze(group, now);
+    if (prev) {
+      if (!meta.typeExplicit && tx.type !== prev.tx.type) {
+        tx.type = prev.tx.type;
+        tx.category = detectCategory(meta.categoryWords, tx.type);
+      }
+      if (!meta.dateExplicit) tx.date = prev.tx.date;
+      // "80 mil de luz y 60 de internet": el 60 también son miles.
+      if (!meta.multiplier && prev.meta.multiplier === 1000 && tx.amount < 1000) tx.amount *= 1000;
+    }
+    results.push(tx);
+    prev = { tx, meta: { ...meta, multiplier: meta.multiplier || prev?.meta.multiplier || 0 } };
+  }
+  return results;
 }

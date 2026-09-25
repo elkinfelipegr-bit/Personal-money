@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTransaction, parseDigitToken } from '../src/parser.js';
+import { parseTransaction, parseDigitToken, parseMany } from '../src/parser.js';
 
 const NOW = new Date(2026, 8, 25, 12, 0, 0); // 25 sep 2026
 const parse = (text) => parseTransaction(text, NOW);
@@ -56,4 +56,36 @@ test('fechas relativas', () => {
   assert.equal(parse('antier 10 mil de pan').date, '2026-09-23');
   assert.equal(parse('antes de ayer 10 mil de pan').date, '2026-09-23');
   assert.equal(parse('ayer gasté 10 mil en taxi').description, 'Taxi');
+});
+
+const many = (text) => parseMany(text, NOW);
+
+test('varios movimientos en una frase', () => {
+  const r = many('pagué 80 mil de luz y 60 de internet');
+  assert.equal(r.length, 2);
+  assert.deepEqual(r.map((t) => [t.amount, t.category, t.type]), [[80000, 'servicios', 'expense'], [60000, 'servicios', 'expense']]);
+  assert.equal(r[1].description, 'Internet');
+});
+
+test('varios con comas, fecha y tipo heredados', () => {
+  const r = many('ayer gasté 20 mil en almuerzo, 12 mil en taxi y 5 mil de tinto');
+  assert.deepEqual(r.map((t) => t.amount), [20000, 12000, 5000]);
+  assert.deepEqual(r.map((t) => t.category), ['comida', 'transporte', 'comida']);
+  assert.ok(r.every((t) => t.date === '2026-09-24'));
+});
+
+test('ingreso y gasto en la misma frase', () => {
+  const r = many('me pagaron 2 millones y pagué el arriendo de 900 mil');
+  assert.deepEqual(r.map((t) => [t.type, t.amount]), [['income', 2000000], ['expense', 900000]]);
+  assert.equal(r[1].category, 'hogar');
+});
+
+test('no parte números ni cantidades de cosas', () => {
+  assert.equal(many('treinta y cinco mil de gasolina').length, 1);
+  assert.equal(many('un millón y medio de la prima').length, 1);
+  assert.equal(many('compré 2 camisas y 3 pantalones por 100 mil').length, 1);
+  assert.equal(many('compré 2 camisas y 3 pantalones por 100 mil')[0].amount, 100000);
+  assert.equal(many('almuerzo 25 mil con mi novia y mi hermana').length, 1);
+  assert.equal(many('me consignaron el sueldo, 3 millones').length, 1);
+  assert.equal(many('pagué el arriendo y la luz, 1 millón').length, 1);
 });

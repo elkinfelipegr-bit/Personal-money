@@ -40,6 +40,16 @@
           </div>
         </div>
         <p class="hint" id="balance-hint"></p>
+        <ul class="alerts" id="budget-alerts"></ul>
+      </div>
+
+      <div class="card pending" id="pending-card" hidden>
+        <div class="section-head tight">
+          <h2>📥 Por revisar <span class="badge" id="pending-count"></span></h2>
+          <button type="button" class="link" id="accept-all">Aceptar todo</button>
+        </div>
+        <p class="muted small">Avisos del banco, gastos fijos del mes y frases con varios movimientos. Revisa y acepta.</p>
+        <ul class="tx-list flat" id="pending-list"></ul>
       </div>
 
       <div class="card capture">
@@ -55,8 +65,9 @@
         <div class="chips" id="examples">
           <button type="button" class="chip">almuerzo 18 mil</button>
           <button type="button" class="chip">me pagaron la quincena 1.800.000</button>
-          <button type="button" class="chip">mercado 230 mil con tarjeta</button>
+          <button type="button" class="chip">pagué 80 mil de luz y 60 de internet</button>
         </div>
+        <button type="button" class="btn subtle" id="open-paste">📩 Pegar avisos del banco</button>
       </div>
 
       <div class="section-head">
@@ -89,6 +100,22 @@
         </div>
       </div>
       <div class="card">
+        <h2>Últimos 6 meses</h2>
+        <div class="legend" aria-hidden="true">
+          <span><i class="swatch income"></i>Ingresos</span>
+          <span><i class="swatch expense"></i>Gastos</span>
+        </div>
+        <div class="trend" id="trend-chart" role="img" aria-label="Ingresos y gastos de los últimos 6 meses"></div>
+        <details class="table-view">
+          <summary>Ver como tabla</summary>
+          <table id="trend-table"></table>
+        </details>
+      </div>
+      <div class="card" id="budgets-summary-card">
+        <h2>Presupuestos del mes</h2>
+        <div class="bars" id="budget-bars"></div>
+      </div>
+      <div class="card">
         <h2>Gastos por categoría</h2>
         <div class="bars" id="expense-bars"></div>
       </div>
@@ -117,6 +144,16 @@
         </select>
       </div>
       <div class="card">
+        <h2>Presupuesto mensual por categoría</h2>
+        <p class="muted small">Te aviso al llegar al 80 % y cuando te pases. Deja vacío para no usar presupuesto.</p>
+        <form id="budgets-form" class="budgets-form"></form>
+      </div>
+      <div class="card">
+        <h2>Gastos e ingresos fijos</h2>
+        <p class="muted small">Cada mes aparecen en «Por revisar» el día que tocan. Se crean marcando «Repetir cada mes» al guardar un movimiento.</p>
+        <ul class="tx-list flat" id="recurring-list"></ul>
+      </div>
+      <div class="card">
         <h2>Tus datos</h2>
         <p class="muted">Todo se guarda solo en este dispositivo. Haz un respaldo de vez en cuando.</p>
         <div class="stack">
@@ -128,8 +165,29 @@
       </div>
       <div class="card">
         <h2>Registrar sin abrir la app</h2>
-        <p class="muted">Puedes abrir la app con el texto ya escrito usando este enlace (sirve para Atajos de iPhone o Google Assistant):</p>
+        <p class="muted small">Esta dirección abre la app con el texto ya escrito. Úsala en Atajos de iPhone o rutinas de Android:</p>
         <code class="url" id="shortcut-url"></code>
+        <details class="howto">
+          <summary>📱 iPhone: registrar solo cada aviso del banco</summary>
+          <ol>
+            <li>Abre <b>Atajos</b> → <b>Automatización</b> → <b>+</b> → <b>Mensaje</b>.</li>
+            <li>En «El mensaje contiene» escribe el nombre del banco (p. ej. <i>Bancolombia</i>) y elige <b>Ejecutar inmediatamente</b>.</li>
+            <li>Acción: <b>Abrir URL</b> con la dirección de arriba cambiando el final por <code>?text=</code> y el <b>Mensaje</b> (variable).</li>
+            <li>Cada SMS del banco abrirá Mi Plata con el gasto listo para confirmar.</li>
+          </ol>
+        </details>
+        <details class="howto">
+          <summary>🤖 Android: compartir el aviso a la app</summary>
+          <ol>
+            <li>Instala Mi Plata en la pantalla de inicio (menú de Chrome → <b>Instalar app</b>).</li>
+            <li>En el SMS o la notificación del banco, mantén presionado → <b>Compartir</b> → <b>Mi Plata</b>.</li>
+            <li>Para hacerlo automático, apps como <b>MacroDroid</b> pueden abrir la dirección de arriba con <code>?text=</code> y el texto de la notificación.</li>
+          </ol>
+        </details>
+        <details class="howto">
+          <summary>✉️ Correos del banco</summary>
+          <p>Copia uno o varios correos o SMS y usa <b>📩 Pegar avisos del banco</b> en Inicio. Los avisos repetidos se ignoran.</p>
+        </details>
       </div>
     </section>
   </main>
@@ -168,11 +226,26 @@
           <select id="tx-payment"></select>
         </label>
       </div>
+      <label class="check"><input type="checkbox" id="tx-repeat"> Repetir cada mes (gasto o ingreso fijo)</label>
       <div class="dialog-actions">
         <button type="button" class="btn danger ghost" id="tx-delete" hidden>Eliminar</button>
         <span class="spacer"></span>
         <button type="button" class="btn" id="tx-cancel">Cancelar</button>
         <button type="submit" class="btn primary" id="tx-save">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="paste-dialog" aria-labelledby="paste-title">
+    <form method="dialog" id="paste-form">
+      <h2 id="paste-title">Pegar avisos del banco</h2>
+      <p class="muted small">Pega uno o varios SMS, notificaciones o correos. Cada aviso queda en «Por revisar».</p>
+      <textarea id="paste-text" rows="8" placeholder="Bancolombia: Compraste $25.000 en RAPPI con tu T.Cred *1234…"></textarea>
+      <p class="muted small" id="paste-result" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="paste-cancel">Cancelar</button>
+        <button type="submit" class="btn primary">Leer avisos</button>
       </div>
     </form>
   </dialog>

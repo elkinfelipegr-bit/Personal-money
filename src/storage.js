@@ -4,8 +4,11 @@
 
 const TX_KEY = 'pm.transactions.v1';
 const SETTINGS_KEY = 'pm.settings.v1';
+const PENDING_KEY = 'pm.pending.v1';
+const RECURRING_KEY = 'pm.recurring.v1';
+const SEEN_KEY = 'pm.seen.v1';
 
-const DEFAULT_SETTINGS = { currency: 'COP', locale: 'es-CO' };
+const DEFAULT_SETTINGS = { currency: 'COP', locale: 'es-CO', budgets: {} };
 
 function read(key, fallback) {
   try {
@@ -56,6 +59,46 @@ export function saveSettings(settings) {
   write(SETTINGS_KEY, settings);
 }
 
+// Bandeja "por revisar": avisos del banco, recurrentes y frases con varios movimientos.
+export function loadPending() {
+  return read(PENDING_KEY, []);
+}
+
+export function savePending(list) {
+  write(PENDING_KEY, list);
+}
+
+export function addPending(items) {
+  const list = loadPending();
+  for (const item of items) list.push({ ...item, id: newId(), pendingAt: new Date().toISOString() });
+  savePending(list);
+  return list;
+}
+
+export function removePending(id) {
+  const list = loadPending().filter((p) => p.id !== id);
+  savePending(list);
+  return list;
+}
+
+export function loadRecurring() {
+  return read(RECURRING_KEY, []);
+}
+
+export function saveRecurring(list) {
+  write(RECURRING_KEY, list);
+}
+
+// Huellas de avisos ya importados, para no duplicarlos (se guardan las 1000 últimas).
+export function loadSeen() {
+  return new Set(read(SEEN_KEY, []));
+}
+
+export function markSeen(keys) {
+  const all = [...loadSeen(), ...keys];
+  write(SEEN_KEY, [...new Set(all)].slice(-1000));
+}
+
 export function exportBackup() {
   return JSON.stringify({
     app: 'personal-money',
@@ -63,6 +106,7 @@ export function exportBackup() {
     exportedAt: new Date().toISOString(),
     settings: loadSettings(),
     transactions: loadTransactions(),
+    recurring: loadRecurring(),
   }, null, 2);
 }
 
@@ -78,6 +122,11 @@ export function importBackup(json) {
   const list = [...byId.values()];
   saveTransactions(list);
   if (data.settings) saveSettings({ ...loadSettings(), ...data.settings });
+  if (Array.isArray(data.recurring)) {
+    const rules = new Map(loadRecurring().map((r) => [r.id, r]));
+    for (const r of data.recurring) if (r.id) rules.set(r.id, r);
+    saveRecurring([...rules.values()]);
+  }
   return list.length;
 }
 
@@ -96,6 +145,7 @@ export function toCSV(list) {
 
 export function clearAll() {
   localStorage.removeItem(TX_KEY);
+  localStorage.removeItem(PENDING_KEY);
 }
 
 // Pide al navegador que no borre los datos si el teléfono se queda sin espacio.

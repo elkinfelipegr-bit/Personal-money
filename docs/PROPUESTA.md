@@ -43,10 +43,14 @@ Leer las notificaciones del banco (por ejemplo, los correos de Bancolombia/Nequi
 - **Categorías editables** en `src/categories.js`, pensadas para Colombia (Éxito, D1, TransMilenio, Nequi, EPM…).
 - **El guardado está aislado** en `src/storage.js`: cuando quieras sincronizar entre dispositivos (Supabase/Firebase), solo se cambia ese archivo.
 
-## Siguientes pasos sugeridos
-- [ ] Activar GitHub Pages e instalarla en el celular.
-- [ ] Usarla 2 semanas y ajustar categorías/palabras clave a tu forma de hablar.
-- [ ] Presupuestos mensuales por categoría con alerta al 80 %.
-- [ ] Importar notificaciones del banco (correo) como pendientes.
-- [ ] Varios movimientos en una sola frase.
-- [ ] Sincronización opcional en la nube.
+## Estado
+
+- [x] Fase 1: registro por voz o texto, balance, resumen, respaldo.
+- [x] Fase 2: lector de avisos bancarios, bandeja «Por revisar», sin duplicados, compartir a la app y automatización con Atajos de iPhone.
+- [x] Fase 3: varios movimientos en una frase, presupuestos con alertas, gastos/ingresos fijos, tendencia de 6 meses.
+
+## Ideas para después
+- Sincronizar entre dispositivos (Supabase o Firebase); hoy los datos viven en un solo teléfono.
+- Leer los correos del banco automáticamente (requiere un pequeño servidor o Google Apps Script con tu permiso).
+- Usar un modelo de IA para frases muy libres; hoy todo es local, gratis y sin enviar datos a terceros.
+- Metas de ahorro.

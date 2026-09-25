@@ -14,6 +14,14 @@ App para llevar tus **gastos e ingresos hablándole al teléfono** y ver tu bala
 
 Entiende formas colombianas de hablar: `25 mil`, `25k`, `25.000`, `1,2 millones`, `un millón y medio`, `20 lucas`, `2 palos`, `treinta y cinco mil`.
 
+### Lo que incluye
+
+| Fase | Función |
+|---|---|
+| 1 | Registro por **voz o texto**, confirmación, balance mensual, lista, resumen por categoría y medio de pago, respaldo y CSV |
+| 2 | **Avisos del banco**: pega SMS/notificaciones/correos (Bancolombia, Nequi, Davivienda, Daviplata, BBVA…) o compártelos a la app; quedan en **«Por revisar»** sin duplicados. En iPhone se puede automatizar con Atajos |
+| 3 | **Varios movimientos en una frase** («80 mil de luz y 60 de internet»), **presupuestos** por categoría con alertas al 80 % y 100 %, **gastos/ingresos fijos** que aparecen solos cada mes, y **tendencia de 6 meses** |
+
 ## Usarla
 
 - **En el celular:** abre la dirección de GitHub Pages (ver abajo) en Chrome (Android) o Safari (iPhone) y elige **«Agregar a pantalla de inicio»**. Queda como una app, funciona sin internet.
@@ -29,13 +37,16 @@ Entiende formas colombianas de hablar: `25 mil`, `25k`, `25.000`, `1,2 millones`
 2. Cada vez que se actualice la rama `main`, se publica sola en
    `https://elkinfelipegr-bit.github.io/Personal-money/`.
 
-### Registrar sin abrir la app (atajo de voz)
-La app acepta el texto en la dirección: `…/Personal-money/?q=gasté 20 mil en taxi`.
-- **iPhone:** crea un Atajo «Dictar texto» → «Abrir URL» con `?q=` + el texto dictado. Luego dices *«Oye Siri, gasto»* y hablas.
-- **Android:** igual con una rutina de Google Assistant o la app Atajos/Tasker.
+### Registrar sin abrir la app
+La app acepta el texto en la dirección: `…/Personal-money/?text=gasté 20 mil en taxi`. Sirve tanto para frases como para avisos del banco.
+- **Voz con Siri:** Atajo «Dictar texto» → «Abrir URL» con `?text=` + lo dictado. Dices *«Oye Siri, gasto»* y hablas.
+- **Cada SMS del banco (iPhone):** Atajos → Automatización → Mensaje que contiene «Bancolombia» → Abrir URL con `?text=` + el mensaje.
+- **Android:** en el SMS o notificación → Compartir → Mi Plata (con la app instalada). Para hacerlo automático, MacroDroid o Tasker.
+
+Los pasos detallados están en **Ajustes** dentro de la app.
 
 ## Tus datos
-Se guardan **solo en tu dispositivo** (nada sale a internet, ni siquiera la voz se guarda). Por eso en **Ajustes** puedes descargar un respaldo, restaurarlo en otro teléfono y exportar a Excel (CSV).
+Tus movimientos se guardan **solo en tu dispositivo**: no hay cuentas ni servidores. El dictado usa el reconocimiento de voz del teléfono (Google o Apple procesan el audio para convertirlo en texto), pero la app no guarda ni envía la grabación. Por eso en **Ajustes** puedes descargar un respaldo, restaurarlo en otro teléfono y exportar a Excel (CSV).
 
 ---
 
@@ -48,11 +59,13 @@ Ver [`docs/PROPUESTA.md`](docs/PROPUESTA.md): qué es posible, qué no, las opci
 ```
 index.html            Interfaz (4 pestañas + diálogo de confirmación)
 styles.css            Estilos, modo claro/oscuro automático
-src/parser.js         Entiende frases en español → movimiento
+src/parser.js         Entiende frases en español → uno o varios movimientos
+src/bank.js           Lee avisos de bancos (SMS, notificaciones, correos)
+src/planning.js       Presupuestos, gastos fijos y tendencia mensual
 src/categories.js     Categorías y palabras clave (edítalas a tu gusto)
 src/storage.js        Guardado local, respaldo y exportación CSV
 src/speech.js         Reconocimiento de voz del navegador
 src/app.js            Lógica de pantallas
 sw.js                 Funcionamiento sin internet
-tests/                Pruebas del intérprete
+tests/                Pruebas (frases, avisos del banco, presupuestos y fijos)
 ```

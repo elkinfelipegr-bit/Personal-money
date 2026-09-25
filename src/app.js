@@ -1,5 +1,7 @@
-import { parseTransaction } from './parser.js';
-import { categoriesFor, findCategory, defaultCategory, PAYMENT_METHODS } from './categories.js';
+import { parseTransaction, parseMany } from './parser.js';
+import { parseBankMessage, parseBankBatch, messageKey } from './bank.js';
+import { dueRecurring, budgetStatus, monthlyTrend, levelFor, monthOf } from './planning.js';
+import { categoriesFor, findCategory, defaultCategory, PAYMENT_METHODS, EXPENSE_CATEGORIES } from './categories.js';
 import * as store from './storage.js';
 import { speechSupported, listenOnce } from './speech.js';
 
@@ -8,12 +10,15 @@ const $$ = (sel) => [...document.querySelectorAll(sel)];
 
 const state = {
   transactions: store.loadTransactions(),
+  pending: store.loadPending(),
+  recurring: store.loadRecurring(),
   settings: store.loadSettings(),
   month: currentMonth(),
   view: 'home',
   filter: 'all',
   search: '',
   editing: null, // movimiento en el diálogo
+  editingPendingId: null, // si el diálogo viene de la bandeja "por revisar"
 };
 
 // ---------------------------------------------------------------------------
@@ -126,10 +131,56 @@ function renderHome() {
   }
   $('#balance-hint').textContent = hint;
 
+  renderBudgetAlerts();
+  renderPending();
+
   const recent = sortTx(list).slice(0, 6);
   $('#recent-list').innerHTML = recent.length
     ? recent.map(txItem).join('')
     : '<li class="empty">Dicta o escribe tu primer movimiento arriba.</li>';
+}
+
+function monthLabelShort(month) {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('es', { month: 'short' }).replace('.', '');
+}
+
+function renderBudgetAlerts() {
+  const alerts = budgetStatus(state.settings.budgets, state.transactions, state.month)
+    .filter((b) => b.level === 'warn' || b.level === 'over');
+  $('#budget-alerts').innerHTML = alerts.map((b) => {
+    const c = findCategory(b.category);
+    const text = b.level === 'over'
+      ? `Te pasaste en ${escapeHTML(c.name)}: ${money(b.spent)} de ${money(b.budget)}`
+      : `${escapeHTML(c.name)} va en ${b.pct} % del presupuesto (${money(b.budget - b.spent)} disponibles)`;
+    return `<li class="alert ${b.level}"><span aria-hidden="true">${b.level === 'over' ? '⛔' : '⚠️'}</span> ${text}</li>`;
+  }).join('');
+}
+
+function renderPending() {
+  const list = [...state.pending].sort((a, b) => a.date.localeCompare(b.date));
+  $('#pending-card').hidden = !list.length;
+  $('#pending-count').textContent = list.length;
+  $('#pending-list').innerHTML = list.map((t) => {
+    const cat = findCategory(t.category);
+    const sign = t.type === 'income' ? 1 : -1;
+    const origin = t.bank ?? (t.source === 'recurrente' ? 'Fijo del mes' : 'Frase');
+    return `
+      <li class="pending-item">
+        <button type="button" class="tx" data-pending="${t.id}" aria-label="Revisar ${escapeHTML(t.description || cat.name)}">
+          <span class="tx-icon" aria-hidden="true">${cat.icon}</span>
+          <span class="tx-main">
+            <span class="tx-desc">${escapeHTML(t.description || cat.name)}</span>
+            <span class="tx-meta">${escapeHTML(origin)} · ${dayLabel(t.date)} · ${escapeHTML(cat.name)}</span>
+          </span>
+          <span class="tx-amount ${t.type}">${t.amount ? money(sign * t.amount, { sign: true }) : '¿?'}</span>
+        </button>
+        <span class="pending-actions">
+          <button type="button" class="round ok" data-accept="${t.id}" aria-label="Aceptar">✓</button>
+          <button type="button" class="round" data-discard="${t.id}" aria-label="Descartar">✕</button>
+        </span>
+      </li>`;
+  }).join('');
 }
 
 function renderList() {
@@ -205,6 +256,21 @@ function renderSummary() {
     $('#vs-prev').textContent = `${diff > 0 ? '+' : ''}${diff} % gasto`;
   } else $('#vs-prev').textContent = '–';
 
+  renderTrend();
+  const budgets = budgetStatus(state.settings.budgets, state.transactions, state.month);
+  $('#budgets-summary-card').hidden = !budgets.length;
+  $('#budget-bars').innerHTML = budgets.map((b) => {
+    const c = findCategory(b.category);
+    const width = b.spent > 0 ? Math.min(100, Math.max(2, b.pct)) : 0;
+    return `
+      <div class="bar-row" title="${escapeHTML(c.name)}: ${money(b.spent)} de ${money(b.budget)}">
+        <span class="bar-label">${c.icon} ${escapeHTML(c.name)}</span>
+        <span class="bar-value">${money(b.spent)} <span class="muted">de ${money(b.budget)}</span></span>
+        <span class="bar-track"><span class="bar-fill budget-${b.level}" style="width:${width}%"></span></span>
+        <span class="bar-note ${b.level}">${b.level === 'over' ? `⛔ Excedido en ${money(b.spent - b.budget)}` : b.level === 'warn' ? `⚠️ ${b.pct} % usado` : `${b.pct} % usado`}</span>
+      </div>`;
+  }).join('');
+
   const catRows = (items) => groupBy(items, (t) => t.category).map(([id, value]) => {
     const c = findCategory(id);
     return { label: c.name, icon: c.icon, value };
@@ -218,10 +284,66 @@ function renderSummary() {
     expense, 'neutral');
 }
 
+function renderTrend() {
+  const rows = monthlyTrend(state.transactions, state.month, 6);
+  const max = Math.max(1, ...rows.flatMap((r) => [r.income, r.expense]));
+  $('#trend-chart').innerHTML = rows.map((r) => {
+    const h = (v) => (v > 0 ? Math.max(2, (v / max) * 100) : 0);
+    const active = r.month === state.month ? ' active' : '';
+    return `
+      <div class="trend-col${active}">
+        <div class="trend-bars">
+          <span class="trend-bar income" style="height:${h(r.income)}%" title="Ingresos ${monthName(r.month)}: ${money(r.income)}"></span>
+          <span class="trend-bar expense" style="height:${h(r.expense)}%" title="Gastos ${monthName(r.month)}: ${money(r.expense)}"></span>
+        </div>
+        <span class="trend-label">${monthLabelShort(r.month)}</span>
+      </div>`;
+  }).join('');
+  $('#trend-table').innerHTML = `
+    <thead><tr><th>Mes</th><th>Ingresos</th><th>Gastos</th><th>Balance</th></tr></thead>
+    <tbody>${rows.map((r) => `<tr><td>${monthName(r.month)}</td><td>${money(r.income)}</td><td>${money(r.expense)}</td><td>${money(r.income - r.expense)}</td></tr>`).join('')}</tbody>`;
+}
+
+function renderBudgetsForm() {
+  const budgets = state.settings.budgets ?? {};
+  $('#budgets-form').innerHTML = EXPENSE_CATEGORIES.map((c) => `
+    <label class="budget-field">
+      <span>${c.icon} ${c.name}</span>
+      <input type="text" inputmode="numeric" data-budget="${c.id}" placeholder="Sin límite"
+             value="${budgets[c.id] ? budgets[c.id].toLocaleString(state.settings.locale) : ''}">
+    </label>`).join('');
+}
+
+function renderRecurring() {
+  $('#recurring-list').innerHTML = state.recurring.length
+    ? state.recurring.map((r) => {
+      const c = findCategory(r.category);
+      return `
+        <li class="pending-item">
+          <span class="tx static">
+            <span class="tx-icon" aria-hidden="true">${c.icon}</span>
+            <span class="tx-main">
+              <span class="tx-desc">${escapeHTML(r.description || c.name)}</span>
+              <span class="tx-meta">Cada mes el día ${r.day} · ${escapeHTML(c.name)}</span>
+            </span>
+            <span class="tx-amount ${r.type}">${money((r.type === 'income' ? 1 : -1) * r.amount, { sign: true })}</span>
+          </span>
+          <span class="pending-actions">
+            <button type="button" class="round" data-unrepeat="${r.id}" aria-label="Dejar de repetir">✕</button>
+          </span>
+        </li>`;
+    }).join('')
+    : '<li class="empty">Aún no tienes gastos o ingresos fijos.</li>';
+}
+
 function renderSettings() {
+  renderBudgetsForm();
+  renderRecurring();
   $('#currency').value = state.settings.currency;
   const base = new URL('.', location.href).href;
-  $('#shortcut-url').textContent = `${base}?q=gasté 20 mil en taxi`;
+  $('#shortcut-url').textContent = window.top === window
+    ? `${base}?text=gasté 20 mil en taxi`
+    : 'Disponible cuando abras la app desde su dirección de GitHub Pages.';
 }
 
 function render() {
@@ -265,8 +387,11 @@ function setDialogType(type) {
   $('#tx-save').textContent = type === 'income' ? 'Guardar ingreso' : 'Guardar gasto';
 }
 
-function openDialog(tx, { isNew }) {
+function openDialog(tx, { isNew, pendingId = null }) {
   state.editing = { ...tx };
+  state.editingPendingId = pendingId;
+  $('#tx-repeat').checked = false;
+  $('#tx-repeat').closest('label').hidden = tx.source === 'recurrente';
   $('#tx-title').textContent = isNew ? 'Confirmar movimiento' : 'Editar movimiento';
   $('#tx-raw').textContent = tx.raw ? `«${tx.raw}»` : '';
   $('#tx-raw').hidden = !tx.raw;
@@ -299,13 +424,91 @@ function saveDialog() {
     date: $('#tx-date').value || todayISO(),
     paymentMethod: $('#tx-payment').value || null,
   };
-  const isNew = !tx.id;
-  state.transactions = store.upsertTransaction(tx);
+  const fromPending = state.editingPendingId;
+  const isNew = !tx.id || Boolean(fromPending);
+  if ($('#tx-repeat').checked) addRecurringFrom(tx);
+  commitTransaction(tx, { fromPending });
   dialog.close();
-  state.month = tx.date.slice(0, 7);
+  if (!fromPending) state.month = tx.date.slice(0, 7);
   render();
   const cat = findCategory(tx.category);
-  toast(`${isNew ? 'Guardado' : 'Actualizado'}: ${cat.icon} ${money(tx.amount)}`);
+  const alert = budgetAlertFor(tx);
+  toast(alert ?? `${isNew ? 'Guardado' : 'Actualizado'}: ${cat.icon} ${money(tx.amount)}`);
+}
+
+// Guarda un movimiento (nuevo o editado) y lo saca de la bandeja si venía de ahí.
+function commitTransaction(tx, { fromPending = null } = {}) {
+  const clean = { ...tx };
+  delete clean.pendingAt;
+  delete clean.bank;
+  if (fromPending) {
+    delete clean.id;
+    state.pending = store.removePending(fromPending);
+    if (tx.raw && tx.bank) store.markSeen([messageKey(tx.raw)]);
+  }
+  state.transactions = store.upsertTransaction(clean);
+}
+
+function addRecurringFrom(tx) {
+  const rule = {
+    id: store.newId(),
+    type: tx.type,
+    amount: tx.amount,
+    category: tx.category,
+    description: tx.description,
+    paymentMethod: tx.paymentMethod ?? null,
+    day: Number(tx.date.slice(8, 10)),
+    lastMonth: monthOf(tx.date),
+  };
+  state.recurring = [...state.recurring, rule];
+  store.saveRecurring(state.recurring);
+}
+
+// Mensaje si este gasto hizo cruzar el 80 % o el 100 % del presupuesto.
+function budgetAlertFor(tx) {
+  const budget = state.settings.budgets?.[tx.category];
+  if (tx.type !== 'expense' || !budget) return null;
+  const month = monthOf(tx.date);
+  const spent = state.transactions
+    .filter((t) => t.type === 'expense' && t.category === tx.category && monthOf(t.date) === month)
+    .reduce((sum, t) => sum + t.amount, 0);
+  const before = levelFor(spent - tx.amount, budget);
+  const after = levelFor(spent, budget);
+  if (after === before || after === 'ok') return null;
+  const c = findCategory(tx.category);
+  return after === 'over'
+    ? `⛔ Te pasaste del presupuesto de ${c.name} (${money(spent)} de ${money(budget)})`
+    : `⚠️ Ya usaste el ${Math.round((spent / budget) * 100)} % del presupuesto de ${c.name}`;
+}
+
+function acceptPending(id) {
+  const item = state.pending.find((p) => p.id === id);
+  if (!item) return;
+  if (!item.amount) {
+    openDialog(item, { isNew: true, pendingId: id });
+    return;
+  }
+  commitTransaction(item, { fromPending: id });
+  render();
+  toast(budgetAlertFor(item) ?? `Guardado: ${findCategory(item.category).icon} ${money(item.amount)}`);
+}
+
+function queuePending(items, message) {
+  state.pending = store.addPending(items);
+  go('home');
+  toast(message);
+  $('#pending-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Genera en la bandeja los fijos del mes que ya tocan.
+function processRecurring() {
+  const due = dueRecurring(state.recurring);
+  if (!due.length) return;
+  state.pending = store.addPending(due.map((d) => d.tx));
+  const last = new Map();
+  for (const d of due) last.set(d.ruleId, d.month);
+  state.recurring = state.recurring.map((r) => (last.has(r.id) ? { ...r, lastMonth: last.get(r.id) } : r));
+  store.saveRecurring(state.recurring);
 }
 
 // ---------------------------------------------------------------------------
@@ -314,8 +517,47 @@ function saveDialog() {
 function capture(text, source) {
   const clean = text.trim();
   if (!clean) return;
-  const parsed = parseTransaction(clean);
-  openDialog({ ...parsed, source }, { isNew: true });
+
+  // ¿Es un aviso del banco (o varios pegados)?
+  const bankItems = parseBankBatch(clean);
+  if (bankItems.length > 1) {
+    importBankItems(bankItems);
+    return;
+  }
+  const single = bankItems[0] ?? parseBankMessage(clean);
+  if (single) {
+    const repeated = store.loadSeen().has(messageKey(single.raw));
+    openDialog({ ...single, source: 'banco' }, { isNew: true });
+    if (repeated) toast('Ojo: este aviso ya lo habías registrado');
+    return;
+  }
+
+  const items = parseMany(clean);
+  if (items.length === 1) {
+    openDialog({ ...items[0], source }, { isNew: true });
+    return;
+  }
+  queuePending(items.map((t) => ({ ...t, source })), `Encontré ${items.length} movimientos. Revísalos abajo.`);
+}
+
+function importBankItems(items) {
+  const seen = store.loadSeen();
+  const fresh = [];
+  const keys = new Set();
+  for (const item of items) {
+    const key = messageKey(item.raw);
+    if (seen.has(key) || keys.has(key)) continue;
+    keys.add(key);
+    fresh.push({ ...item, source: 'banco' });
+  }
+  const skipped = items.length - fresh.length;
+  if (!fresh.length) {
+    toast('Esos avisos ya estaban registrados');
+    return 0;
+  }
+  store.markSeen([...keys]);
+  queuePending(fresh, `${fresh.length} aviso${fresh.length > 1 ? 's' : ''} por revisar${skipped ? ` (${skipped} repetido${skipped > 1 ? 's' : ''})` : ''}`);
+  return fresh.length;
 }
 
 let listening = null;
@@ -400,10 +642,73 @@ function bind() {
   $('#add-manual').addEventListener('click', () => openDialog({ type: 'expense', date: todayISO(), source: 'manual' }, { isNew: true }));
 
   document.body.addEventListener('click', (e) => {
+    const accept = e.target.closest('[data-accept]');
+    if (accept) { acceptPending(accept.dataset.accept); return; }
+    const discard = e.target.closest('[data-discard]');
+    if (discard) {
+      const removed = state.pending.find((p) => p.id === discard.dataset.discard);
+      state.pending = store.removePending(discard.dataset.discard);
+      render();
+      toast('Descartado', () => { state.pending = store.addPending([removed]); render(); });
+      return;
+    }
+    const unrepeat = e.target.closest('[data-unrepeat]');
+    if (unrepeat) {
+      state.recurring = state.recurring.filter((r) => r.id !== unrepeat.dataset.unrepeat);
+      store.saveRecurring(state.recurring);
+      renderRecurring();
+      toast('Ya no se repetirá');
+      return;
+    }
+    const pending = e.target.closest('.tx[data-pending]');
+    if (pending) {
+      const item = state.pending.find((p) => p.id === pending.dataset.pending);
+      if (item) openDialog(item, { isNew: true, pendingId: item.id });
+      return;
+    }
     const item = e.target.closest('.tx[data-id]');
     if (!item) return;
     const tx = state.transactions.find((t) => t.id === item.dataset.id);
     if (tx) openDialog(tx, { isNew: false });
+  });
+
+  $('#accept-all').addEventListener('click', () => {
+    const ready = state.pending.filter((p) => p.amount);
+    for (const item of ready) commitTransaction(item, { fromPending: item.id });
+    render();
+    toast(`${ready.length} movimiento${ready.length === 1 ? '' : 's'} guardado${ready.length === 1 ? '' : 's'}`);
+  });
+
+  const pasteDialog = $('#paste-dialog');
+  $('#open-paste').addEventListener('click', () => {
+    $('#paste-text').value = '';
+    $('#paste-result').textContent = '';
+    pasteDialog.showModal();
+    $('#paste-text').focus();
+  });
+  $('#paste-cancel').addEventListener('click', () => pasteDialog.close());
+  $('#paste-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const items = parseBankBatch($('#paste-text').value);
+    if (!items.length) {
+      $('#paste-result').textContent = 'No reconocí avisos del banco. Deben incluir el monto con $ (p. ej. «Compraste $25.000 en…»).';
+      return;
+    }
+    pasteDialog.close();
+    importBankItems(items);
+  });
+
+  $('#budgets-form').addEventListener('change', (e) => {
+    const input = e.target.closest('[data-budget]');
+    if (!input) return;
+    const value = parseAmountInput(input.value);
+    const budgets = { ...(state.settings.budgets ?? {}) };
+    if (value && value > 0) budgets[input.dataset.budget] = value;
+    else delete budgets[input.dataset.budget];
+    state.settings.budgets = budgets;
+    store.saveSettings(state.settings);
+    input.value = value ? value.toLocaleString(state.settings.locale) : '';
+    toast('Presupuesto guardado');
   });
 
   $$('#tx-form [data-type]').forEach((b) => b.addEventListener('click', () => setDialogType(b.dataset.type)));
@@ -412,6 +717,7 @@ function bind() {
   $('#tx-cancel').addEventListener('click', () => dialog.close());
   $('#tx-delete').addEventListener('click', () => {
     const removed = state.editing;
+    if (!removed.id) return;
     state.transactions = store.deleteTransaction(removed.id);
     dialog.close();
     render();
@@ -446,6 +752,7 @@ function bind() {
       const count = store.importBackup(await file.text());
       state.transactions = store.loadTransactions();
       state.settings = store.loadSettings();
+      state.recurring = store.loadRecurring();
       render();
       toast(`Respaldo restaurado (${count} movimientos)`);
     } catch (err) {
@@ -457,6 +764,7 @@ function bind() {
     if (!confirm('¿Borrar todos los movimientos? Esto no se puede deshacer.')) return;
     store.clearAll();
     state.transactions = [];
+    state.pending = [];
     render();
     toast('Se borraron todos los movimientos');
   });
@@ -464,13 +772,14 @@ function bind() {
 
 function init() {
   bind();
+  processRecurring();
   if (!speechSupported) $('#mic-btn').classList.add('unsupported');
   go('home');
   store.requestPersistence();
 
   // ?q=texto abre la confirmación directamente (atajos de voz del teléfono).
   const params = new URLSearchParams(location.search);
-  const q = params.get('q') || params.get('text');
+  const q = params.get('q') || params.get('text') || params.get('title');
   if (q) {
     history.replaceState(null, '', location.pathname);
     capture(q, 'atajo');

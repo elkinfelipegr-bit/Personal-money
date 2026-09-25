@@ -245,3 +245,75 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
   .row { grid-template-columns: 1fr; }
   #month-label { min-width: 7.5em; font-size: .85rem; }
 }
+
+/* Fase 2 y 3 */
+.small { font-size: .85rem; }
+.section-head.tight { margin: 0 0 4px; }
+.badge {
+  display: inline-grid; place-items: center; min-width: 1.5em; height: 1.5em; padding: 0 6px;
+  border-radius: 999px; background: var(--accent); color: var(--accent-contrast); font-size: .75rem; vertical-align: 2px;
+}
+.pending { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.tx-list.flat { border: 0; border-radius: 0; background: transparent; }
+.tx-list.flat .tx { padding-left: 0; padding-right: 0; }
+.pending-item { display: flex; align-items: center; gap: 6px; }
+.pending-item .tx { flex: 1; min-width: 0; }
+.tx.static { cursor: default; }
+.tx.static:hover { background: none; }
+.pending-actions { display: flex; gap: 6px; flex: none; }
+.pending-item .tx { gap: 10px; }
+.pending-item .tx-icon { display: none; }
+.pending-item .tx-desc { white-space: normal; overflow-wrap: anywhere; }
+.round {
+  width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border);
+  background: var(--surface); cursor: pointer; font-weight: 700;
+}
+.round.ok { background: var(--accent); color: var(--accent-contrast); border-color: transparent; }
+.btn.subtle { margin-top: 12px; background: transparent; border-style: dashed; font-weight: 500; color: var(--text-2); width: 100%; }
+
+.alerts { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.alerts:empty { display: none; }
+.alert { font-size: .85rem; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
+.alert.over { color: var(--danger); }
+
+.bar-note { grid-column: 1 / -1; font-size: .78rem; color: var(--muted); }
+.bar-note.over { color: var(--danger); }
+.bar-fill.budget-ok { background: var(--bar-neutral); }
+.bar-fill.budget-warn { background: var(--bar-expense); }
+.bar-fill.budget-over { background: var(--danger); }
+
+.legend { display: flex; gap: 14px; font-size: .82rem; color: var(--text-2); margin: -4px 0 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.swatch.income { background: var(--bar-income); }
+.swatch.expense { background: var(--bar-expense); }
+.trend { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; height: 150px; align-items: end; }
+.trend-col { display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; }
+.trend-bars {
+  flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 2px;
+  border-bottom: 1px solid var(--border);
+}
+.trend-bar { width: min(16px, 40%); border-radius: 4px 4px 0 0; }
+.trend-bar.income { background: var(--bar-income); }
+.trend-bar.expense { background: var(--bar-expense); }
+.trend-label { font-size: .75rem; color: var(--muted); text-transform: capitalize; }
+.trend-col.active .trend-label { color: var(--text); font-weight: 700; }
+.table-view { margin-top: 10px; font-size: .85rem; }
+.table-view summary, .howto summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.table-view table { width: 100%; border-collapse: collapse; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.table-view th, .table-view td { text-align: right; padding: 4px 2px; border-bottom: 1px solid var(--border); }
+.table-view th:first-child, .table-view td:first-child { text-align: left; }
+
+.budgets-form { display: grid; gap: 8px; }
+.budget-field { display: grid; grid-template-columns: 1fr 9.5em; align-items: center; gap: 8px; font-size: .9rem; }
+.budget-field input { padding: 8px 10px; text-align: right; }
+.howto { margin-top: 12px; font-size: .9rem; }
+.howto ol { padding-left: 1.2em; margin: 8px 0 0; display: grid; gap: 4px; }
+.howto code { font-size: .8rem; background: var(--surface-2); padding: 1px 4px; border-radius: 4px; }
+.check { display: flex !important; align-items: center; gap: 8px; font-weight: 500 !important; }
+.check input { width: 18px; height: 18px; accent-color: var(--accent); }
+textarea {
+  width: 100%; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--surface-2); font: inherit; color: inherit; resize: vertical;
+}
+#paste-form { display: grid; gap: 10px; }

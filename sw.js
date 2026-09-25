@@ -1,6 +1,6 @@
 // Service worker: guarda la app para que abra sin internet.
 // Sube CACHE cada vez que cambien los archivos para forzar la actualización.
-const CACHE = 'mi-plata-v1';
+const CACHE = 'mi-plata-v2';
 const ASSETS = [
   './',
   'index.html',
@@ -11,6 +11,8 @@ const ASSETS = [
   'src/categories.js',
   'src/storage.js',
   'src/speech.js',
+  'src/bank.js',
+  'src/planning.js',
   'icons/icon.svg',
   'icons/icon-192.png',
   'icons/icon-512.png',
